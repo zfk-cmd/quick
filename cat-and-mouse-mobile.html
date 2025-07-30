@@ -1,0 +1,962 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>猫和老鼠：奶酪收集竞赛</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#FF9F1C',
+                        secondary: '#2EC4B6',
+                        accent: '#E71D36',
+                        dark: '#2D3142',
+                        light: '#FDFFFC'
+                    },
+                    fontFamily: {
+                        game: ['"Comic Sans MS"', '"Marker Felt"', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .text-shadow {
+                text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+            }
+            .animate-bounce-slow {
+                animation: bounce 2s infinite;
+            }
+            .animate-float {
+                animation: float 3s ease-in-out infinite;
+            }
+            .pixel-corners {
+                clip-path: polygon(
+                    0% 8px, 8px 0%, calc(100% - 8px) 0%, 100% 8px,
+                    100% calc(100% - 8px), calc(100% - 8px) 100%,
+                    8px 100%, 0% calc(100% - 8px)
+                );
+            }
+            .control-shadow {
+                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2), 0 2px 4px -1px rgba(0, 0, 0, 0.1);
+            }
+            .btn-press {
+                transform: scale(0.95);
+                opacity: 0.8;
+            }
+        }
+
+        @keyframes float {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+            100% { transform: translateY(0px); }
+        }
+
+        /* 移动设备优化 */
+        @media (max-width: 640px) {
+            body {
+                touch-action: manipulation;
+                overscroll-behavior: contain;
+            }
+            
+            canvas {
+                touch-action: none;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-amber-50 to-blue-50 min-h-screen font-game text-dark flex flex-col items-center p-0 overflow-x-hidden">
+    <!-- 游戏容器 -->
+    <div class="w-full max-w-md mx-auto flex flex-col items-center h-screen flex overflow-hidden">
+        <!-- 标题区域 - 移动版更紧凑 -->
+        <header class="w-full text-center p-2 bg-white/60 backdrop-blur-sm shadow-sm">
+            <h1 class="text-[clamp(1.4rem,5vw,2rem)] font-bold text-primary text-shadow mb-1 flex items-center justify-center">
+                <i class="fa fa-paw mr-2 text-accent animate-bounce-slow"></i>
+                猫和老鼠
+                <i class="fa fa-paw ml-2 text-accent animate-bounce-slow"></i>
+            </h1>
+            <p class="text-gray-600 text-sm">奶酪收集竞赛</p>
+        </header>
+
+        <!-- 游戏状态面板 - 移动版优化布局 -->
+        <div class="w-full bg-white/80 backdrop-blur-sm shadow-md p-2 flex flex-wrap justify-between items-center text-xs">
+            <div class="flex items-center m-1">
+                <i class="fa fa-clock-o text-accent mr-1"></i>
+                <span class="font-bold">时间: </span>
+                <span id="timer" class="ml-1">00:30</span>
+            </div>
+            <div class="flex items-center m-1">
+                <i class="fa fa-cheese text-yellow-500 mr-1"></i>
+                <span class="font-bold">奶酪: </span>
+                <span id="cheese-count" class="ml-1">0/10</span>
+            </div>
+            <div class="flex items-center m-1">
+                <i class="fa fa-signal text-secondary mr-1"></i>
+                <span class="font-bold">关卡: </span>
+                <span id="level" class="ml-1">1</span>
+            </div>
+            <div class="flex items-center m-1">
+                <i class="fa fa-user text-primary mr-1"></i>
+                <span class="font-bold">控制: </span>
+                <span id="current-player" class="ml-1">猫</span>
+            </div>
+        </div>
+
+        <!-- 游戏画布容器 - 占据主要屏幕空间 -->
+        <div class="relative w-full flex-grow bg-brown-100 shadow-lg overflow-hidden pixel-corners">
+            <canvas id="gameCanvas" class="w-full h-full bg-[#8FBC8F]"></canvas>
+            
+            <!-- 开始屏幕 - 适配手机尺寸 -->
+            <div id="startScreen" class="absolute inset-0 bg-dark/80 backdrop-blur-sm flex items-center justify-center p-4 z-10">
+                <div class="bg-light rounded-xl p-5 w-full max-w-xs text-center shadow-2xl">
+                    <h2 class="text-2xl font-bold text-primary mb-3">准备开始游戏！</h2>
+                    <p class="mb-4 text-gray-700 text-sm">猫和老鼠需要合作收集所有奶酪。<br>猫可以打破墙壁，老鼠可以钻小洞。</p>
+                    
+                    <div class="grid grid-cols-2 gap-3 mb-4">
+                        <div class="bg-blue-50 p-2 rounded-lg text-xs">
+                            <h3 class="font-bold text-secondary">猫的能力</h3>
+                            <p>可以打破棕色墙壁</p>
+                        </div>
+                        <div class="bg-yellow-50 p-2 rounded-lg text-xs">
+                            <h3 class="font-bold text-amber-500">老鼠的能力</h3>
+                            <p>可以通过狭小通道</p>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4 text-left text-xs">
+                        <h3 class="font-bold mb-1">控制方式：</h3>
+                        <p><span class="inline-block w-16">虚拟按键</span> 移动角色</p>
+                        <p><span class="inline-block w-16">切换</span> 切换猫/老鼠</p>
+                        <p><span class="inline-block w-16">动作</span> 猫：打破墙壁</p>
+                    </div>
+                    
+                    <button id="startButton" class="bg-primary hover:bg-primary/80 text-white font-bold py-2 px-6 rounded-full text-sm transition-all transform hover:scale-105 focus:outline-none">
+                        开始游戏 <i class="fa fa-play ml-1"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- 游戏结束屏幕 - 适配手机尺寸 -->
+            <div id="endScreen" class="absolute inset-0 bg-dark/80 backdrop-blur-sm flex items-center justify-center p-4 z-10 hidden">
+                <div class="bg-light rounded-xl p-5 w-full max-w-xs text-center shadow-2xl">
+                    <h2 id="endTitle" class="text-2xl font-bold mb-3"></h2>
+                    <p id="endMessage" class="mb-4 text-gray-700 text-sm"></p>
+                    <div class="mb-4">
+                        <img id="endImage" src="" alt="" class="mx-auto w-24 h-24 object-contain">
+                    </div>
+                    <button id="restartButton" class="bg-primary hover:bg-primary/80 text-white font-bold py-2 px-6 rounded-full text-sm transition-all transform hover:scale-105 focus:outline-none">
+                        再玩一次 <i class="fa fa-refresh ml-1"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- 暂停按钮 - 移动版位置调整 -->
+            <button id="pauseButton" class="absolute top-3 right-3 bg-white/70 hover:bg-white p-2 rounded-full shadow-lg z-5 transition-all">
+                <i class="fa fa-pause text-dark"></i>
+            </button>
+            
+            <!-- 移动设备控制按钮 - 优化尺寸和布局 -->
+            <div class="absolute bottom-4 left-0 right-0 flex justify-between px-3 z-5">
+                <!-- 方向控制区 -->
+                <div class="flex flex-col items-center">
+                    <button class="control-btn up bg-white/60 hover:bg-white w-16 h-16 rounded-full mb-2 flex items-center justify-center control-shadow active:btn-press">
+                        <i class="fa fa-arrow-up text-lg"></i>
+                    </button>
+                    <div class="flex">
+                        <button class="control-btn left bg-white/60 hover:bg-white w-16 h-16 rounded-full mr-2 flex items-center justify-center control-shadow active:btn-press">
+                            <i class="fa fa-arrow-left text-lg"></i>
+                        </button>
+                        <button class="control-btn down bg-white/60 hover:bg-white w-16 h-16 rounded-full ml-2 flex items-center justify-center control-shadow active:btn-press">
+                            <i class="fa fa-arrow-down text-lg"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- 右侧动作按钮 -->
+                <div class="flex flex-col items-center">
+                    <button class="control-btn right bg-white/60 hover:bg-white w-16 h-16 rounded-full mb-2 flex items-center justify-center control-shadow active:btn-press">
+                        <i class="fa fa-arrow-right text-lg"></i>
+                    </button>
+                    <div class="flex">
+                        <button class="control-btn switch bg-secondary/60 hover:bg-secondary w-16 h-16 rounded-full mr-2 flex items-center justify-center control-shadow active:btn-press">
+                            <i class="fa fa-exchange text-lg"></i>
+                        </button>
+                        <button class="control-btn action bg-accent/60 hover:bg-accent w-16 h-16 rounded-full flex items-center justify-center control-shadow active:btn-press">
+                            <i class="fa fa-destroy text-lg"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 游戏说明 - 移动版折叠显示 -->
+        <div class="w-full bg-white/80 backdrop-blur-sm shadow-md p-2 text-xs">
+            <div id="hintToggle" class="flex justify-between items-center font-bold text-primary">
+                <h3>游戏提示</h3>
+                <i class="fa fa-chevron-down transition-transform duration-300"></i>
+            </div>
+            <div id="hints" class="hidden mt-2 list-disc list-inside text-gray-700 space-y-1">
+                <li>收集所有奶酪即可通关，注意时间限制！</li>
+                <li>点击"切换"按钮切换控制猫或老鼠</li>
+                <li>猫可以点击"动作"按钮打破棕色墙壁</li>
+                <li>老鼠可以通过狭小的通道</li>
+                <li>每通关一个关卡，难度会增加</li>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 游戏常量和变量 - 适配移动屏幕尺寸
+        const CANVAS_ASPECT_RATIO = 4/3; // 宽高比保持4:3，适合大多数手机
+        let canvas, ctx;
+        let canvasWidth, canvasHeight;
+        const TILE_SIZE = 32; // 减小砖块尺寸，适合手机屏幕
+        let gameState = 'start'; // start, playing, paused, ended
+        let currentLevel = 1;
+        let cheeseCollected = 0;
+        let totalCheese = 8; // 减少初始奶酪数量，适合手机游戏
+        let timeLeft = 45; // 增加时间，适应触摸操作
+        let timerInterval;
+        let currentPlayer = 'cat'; // cat or mouse
+        
+        // 游戏角色
+        const cat = {
+            x: TILE_SIZE * 2,
+            y: TILE_SIZE * 2,
+            width: TILE_SIZE * 0.8,
+            height: TILE_SIZE * 0.8,
+            speed: 3.5, // 稍微降低速度，适合触摸控制
+            color: '#2EC4B6',
+            direction: 'right',
+            isMoving: false,
+            frame: 0,
+            animationSpeed: 0.15
+        };
+        
+        const mouse = {
+            x: TILE_SIZE * 12, // 调整初始位置，适合较小地图
+            y: TILE_SIZE * 8,
+            width: TILE_SIZE * 0.6,
+            height: TILE_SIZE * 0.6,
+            speed: 4,
+            color: '#FFD700',
+            direction: 'left',
+            isMoving: false,
+            frame: 0,
+            animationSpeed: 0.2
+        };
+        
+        // 键盘和触摸控制
+        const keys = {
+            up: false,
+            down: false,
+            left: false,
+            right: false,
+            switch: false,
+            action: false
+        };
+        
+        // 游戏地图 - 0:空地, 1:墙壁, 2:可破坏墙壁, 3:狭小通道(只有老鼠能过), 4:奶酪
+        let gameMap = [];
+        
+        // 初始化游戏
+        function initGame() {
+            // 计算适合屏幕的画布尺寸
+            calculateCanvasSize();
+            
+            canvas = document.getElementById('gameCanvas');
+            ctx = canvas.getContext('2d');
+            
+            // 设置画布尺寸
+            canvas.width = canvasWidth;
+            canvas.height = canvasHeight;
+            
+            // 生成第一关地图
+            generateMap(currentLevel);
+            
+            // 重置游戏状态
+            cheeseCollected = 0;
+            timeLeft = 45 + (currentLevel - 1) * 5;
+            updateHUD();
+            
+            // 事件监听
+            window.addEventListener('keydown', handleKeyDown);
+            window.addEventListener('keyup', handleKeyUp);
+            window.addEventListener('resize', resizeCanvas);
+            
+            // 按钮事件
+            document.getElementById('startButton').addEventListener('click', startGame);
+            document.getElementById('restartButton').addEventListener('click', restartGame);
+            document.getElementById('pauseButton').addEventListener('click', togglePause);
+            
+            // 提示框折叠/展开
+            document.getElementById('hintToggle').addEventListener('click', () => {
+                const hints = document.getElementById('hints');
+                const icon = document.querySelector('#hintToggle i');
+                hints.classList.toggle('hidden');
+                icon.classList.toggle('rotate-180');
+            });
+            
+            // 移动设备触摸控制 - 增强触摸体验
+            setupTouchControls();
+            
+            // 开始渲染
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // 计算适合屏幕的画布尺寸
+        function calculateCanvasSize() {
+            const windowWidth = window.innerWidth;
+            const windowHeight = window.innerHeight;
+            
+            // 基于屏幕可用空间和纵横比计算画布尺寸
+            const availableHeight = windowHeight * 0.6; // 画布占屏幕高度的60%
+            const calculatedWidth = availableHeight * CANVAS_ASPECT_RATIO;
+            
+            if (calculatedWidth <= windowWidth) {
+                canvasHeight = availableHeight;
+                canvasWidth = calculatedWidth;
+            } else {
+                canvasWidth = windowWidth * 0.95; // 留出边距
+                canvasHeight = canvasWidth / CANVAS_ASPECT_RATIO;
+            }
+        }
+        
+        // 响应式画布调整
+        function resizeCanvas() {
+            const oldWidth = canvasWidth;
+            const oldHeight = canvasHeight;
+            
+            calculateCanvasSize();
+            
+            // 只有当尺寸变化明显时才重绘
+            if (Math.abs(oldWidth - canvasWidth) > 10 || Math.abs(oldHeight - canvasHeight) > 10) {
+                canvas.width = canvasWidth;
+                canvas.height = canvasHeight;
+                draw();
+            }
+        }
+        
+        // 设置触摸控制 - 优化移动体验
+        function setupTouchControls() {
+            // 方向控制按钮
+            const touchButtons = {
+                up: document.querySelector('.control-btn.up'),
+                down: document.querySelector('.control-btn.down'),
+                left: document.querySelector('.control-btn.left'),
+                right: document.querySelector('.control-btn.right'),
+                switch: document.querySelector('.control-btn.switch'),
+                action: document.querySelector('.control-btn.action')
+            };
+            
+            // 为每个按钮添加触摸事件
+            Object.keys(touchButtons).forEach(key => {
+                const button = touchButtons[key];
+                if (button) {
+                    // 触摸开始
+                    button.addEventListener('touchstart', (e) => {
+                        e.preventDefault(); // 防止触摸事件冒泡和页面滚动
+                        keys[key] = true;
+                        button.classList.add('btn-press');
+                    }, { passive: false });
+                    
+                    // 触摸结束
+                    button.addEventListener('touchend', (e) => {
+                        e.preventDefault();
+                        keys[key] = false;
+                        button.classList.remove('btn-press');
+                    }, { passive: false });
+                    
+                    // 触摸离开按钮区域
+                    button.addEventListener('touchleave', (e) => {
+                        e.preventDefault();
+                        keys[key] = false;
+                        button.classList.remove('btn-press');
+                    }, { passive: false });
+                }
+            });
+            
+            // 防止页面在游戏区域触摸时滚动
+            canvas.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+            }, { passive: false });
+        }
+        
+        // 生成地图 - 适应手机屏幕
+        function generateMap(level) {
+            const mapWidth = Math.floor(canvasWidth / TILE_SIZE);
+            const mapHeight = Math.floor(canvasHeight / TILE_SIZE);
+            
+            // 初始化空地图
+            gameMap = Array(mapHeight).fill().map(() => Array(mapWidth).fill(0));
+            
+            // 边界墙壁
+            for (let x = 0; x < mapWidth; x++) {
+                gameMap[0][x] = 1;
+                gameMap[mapHeight - 1][x] = 1;
+            }
+            for (let y = 0; y < mapHeight; y++) {
+                gameMap[y][0] = 1;
+                gameMap[y][mapWidth - 1] = 1;
+            }
+            
+            // 随机墙壁 - 手机版降低密度，更容易操作
+            const wallDensity = 0.12 + (level - 1) * 0.02;
+            for (let y = 1; y < mapHeight - 1; y++) {
+                for (let x = 1; x < mapWidth - 1; x++) {
+                    // 避免在角色初始位置生成墙壁
+                    if ((x === 2 && y === 2) || (x === 12 && y === 8)) continue;
+                    
+                    if (Math.random() < wallDensity) {
+                        // 15%概率生成可破坏墙壁，比原版更高，增加趣味性
+                        gameMap[y][x] = Math.random() < 0.15 ? 2 : 1;
+                    } else if (Math.random() < 0.06 && level > 1) {
+                        // 狭小通道
+                        gameMap[y][x] = 3;
+                    }
+                }
+            }
+            
+            // 放置奶酪 - 数量随关卡增加，但比原版少
+            totalCheese = 8 + (level - 1) * 1;
+            let cheesePlaced = 0;
+            while (cheesePlaced < totalCheese) {
+                const x = Math.floor(Math.random() * (mapWidth - 2)) + 1;
+                const y = Math.floor(Math.random() * (mapHeight - 2)) + 1;
+                
+                // 确保奶酪放在空地上
+                if (gameMap[y][x] === 0) {
+                    gameMap[y][x] = 4;
+                    cheesePlaced++;
+                }
+            }
+        }
+        
+        // 处理键盘按下
+        function handleKeyDown(e) {
+            switch(e.key) {
+                case 'ArrowUp':
+                    keys.up = true;
+                    break;
+                case 'ArrowDown':
+                    keys.down = true;
+                    break;
+                case 'ArrowLeft':
+                    keys.left = true;
+                    break;
+                case 'ArrowRight':
+                    keys.right = true;
+                    break;
+                case ' ': // 空格键切换角色
+                    if (!keys.switch) { // 防止连续切换
+                        keys.switch = true;
+                        switchPlayer();
+                    }
+                    break;
+                case 'c':
+                case 'C': // C键执行动作
+                    keys.action = true;
+                    break;
+                case 'p':
+                case 'P': // P键暂停
+                    togglePause();
+                    break;
+            }
+        }
+        
+        // 处理键盘释放
+        function handleKeyUp(e) {
+            switch(e.key) {
+                case 'ArrowUp':
+                    keys.up = false;
+                    break;
+                case 'ArrowDown':
+                    keys.down = false;
+                    break;
+                case 'ArrowLeft':
+                    keys.left = false;
+                    break;
+                case 'ArrowRight':
+                    keys.right = false;
+                    break;
+                case ' ':
+                    keys.switch = false;
+                    break;
+                case 'c':
+                case 'C':
+                    keys.action = false;
+                    break;
+            }
+        }
+        
+        // 切换玩家
+        function switchPlayer() {
+            currentPlayer = currentPlayer === 'cat' ? 'mouse' : 'cat';
+            document.getElementById('current-player').textContent = currentPlayer === 'cat' ? '猫' : '老鼠';
+        }
+        
+        // 开始游戏
+        function startGame() {
+            document.getElementById('startScreen').classList.add('hidden');
+            gameState = 'playing';
+            
+            // 启动计时器
+            timerInterval = setInterval(() => {
+                if (gameState === 'playing') {
+                    timeLeft--;
+                    updateHUD();
+                    
+                    if (timeLeft <= 0) {
+                        endGame(false);
+                    }
+                }
+            }, 1000);
+        }
+        
+        // 重新开始游戏
+        function restartGame() {
+            clearInterval(timerInterval);
+            currentLevel = 1;
+            document.getElementById('endScreen').classList.add('hidden');
+            initGame();
+        }
+        
+        // 切换暂停状态
+        function togglePause() {
+            if (gameState === 'playing') {
+                gameState = 'paused';
+                document.getElementById('pauseButton').innerHTML = '<i class="fa fa-play text-dark"></i>';
+            } else if (gameState === 'paused') {
+                gameState = 'playing';
+                document.getElementById('pauseButton').innerHTML = '<i class="fa fa-pause text-dark"></i>';
+            }
+        }
+        
+        // 更新游戏状态显示
+        function updateHUD() {
+            // 格式化时间显示
+            const minutes = Math.floor(timeLeft / 60);
+            const seconds = timeLeft % 60;
+            document.getElementById('timer').textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            
+            // 更新奶酪数量
+            document.getElementById('cheese-count').textContent = `${cheeseCollected}/${totalCheese}`;
+            
+            // 更新关卡
+            document.getElementById('level').textContent = currentLevel;
+        }
+        
+        // 移动角色
+        function moveCharacter() {
+            const character = currentPlayer === 'cat' ? cat : mouse;
+            let moved = false;
+            
+            // 保存原始位置，用于碰撞检测
+            const originalX = character.x;
+            const originalY = character.y;
+            
+            // 根据按键状态移动角色
+            if (keys.up) {
+                character.y -= character.speed;
+                character.direction = 'up';
+                moved = true;
+            }
+            if (keys.down) {
+                character.y += character.speed;
+                character.direction = 'down';
+                moved = true;
+            }
+            if (keys.left) {
+                character.x -= character.speed;
+                character.direction = 'left';
+                moved = true;
+            }
+            if (keys.right) {
+                character.x += character.speed;
+                character.direction = 'right';
+                moved = true;
+            }
+            
+            // 处理动作按钮 - 猫可以打破墙壁
+            if (keys.action && currentPlayer === 'cat') {
+                breakWall();
+                keys.action = false; // 防止连续打破
+            }
+            
+            // 碰撞检测
+            if (checkCollision(character)) {
+                // 发生碰撞，恢复原始位置
+                character.x = originalX;
+                character.y = originalY;
+                moved = false;
+            }
+            
+            // 检查是否收集到奶酪
+            checkCheeseCollection(character);
+            
+            // 更新动画状态
+            character.isMoving = moved;
+            if (moved) {
+                character.frame += character.animationSpeed;
+            } else {
+                character.frame = 0; // 停止时重置动画帧
+            }
+        }
+        
+        // 碰撞检测
+        function checkCollision(character) {
+            // 获取角色所在的网格位置
+            const gridX = Math.floor(character.x / TILE_SIZE);
+            const gridY = Math.floor(character.y / TILE_SIZE);
+            
+            // 检查四个角落的碰撞
+            const corners = [
+                {x: character.x, y: character.y},
+                {x: character.x + character.width, y: character.y},
+                {x: character.x, y: character.y + character.height},
+                {x: character.x + character.width, y: character.y + character.height}
+            ];
+            
+            for (const corner of corners) {
+                const cX = Math.floor(corner.x / TILE_SIZE);
+                const cY = Math.floor(corner.y / TILE_SIZE);
+                
+                // 检查是否超出地图范围
+                if (cX < 0 || cX >= gameMap[0].length || cY < 0 || cY >= gameMap.length) {
+                    return true;
+                }
+                
+                const tile = gameMap[cY][cX];
+                
+                // 猫不能通过狭小通道，老鼠可以
+                if (tile === 1 || tile === 2 || (tile === 3 && currentPlayer === 'cat')) {
+                    return true;
+                }
+            }
+            
+            return false;
+        }
+        
+        // 猫打破墙壁
+        function breakWall() {
+            // 确定猫面对的方向和位置
+            let wallX, wallY;
+            
+            switch(cat.direction) {
+                case 'up':
+                    wallX = Math.floor(cat.x / TILE_SIZE);
+                    wallY = Math.floor((cat.y - TILE_SIZE) / TILE_SIZE);
+                    break;
+                case 'down':
+                    wallX = Math.floor(cat.x / TILE_SIZE);
+                    wallY = Math.floor((cat.y + cat.height) / TILE_SIZE);
+                    break;
+                case 'left':
+                    wallX = Math.floor((cat.x - TILE_SIZE) / TILE_SIZE);
+                    wallY = Math.floor(cat.y / TILE_SIZE);
+                    break;
+                case 'right':
+                    wallX = Math.floor((cat.x + cat.width) / TILE_SIZE);
+                    wallY = Math.floor(cat.y / TILE_SIZE);
+                    break;
+            }
+            
+            // 检查是否是可破坏的墙壁
+            if (wallX >= 0 && wallX < gameMap[0].length && wallY >= 0 && wallY < gameMap.length) {
+                if (gameMap[wallY][wallX] === 2) {
+                    gameMap[wallY][wallX] = 0; // 打破墙壁
+                    
+                    // 添加打破墙壁的动画效果
+                    drawBreakEffect(wallX * TILE_SIZE, wallY * TILE_SIZE);
+                }
+            }
+        }
+        
+        // 绘制打破墙壁的效果
+        function drawBreakEffect(x, y) {
+            // 这里可以添加一个简单的动画效果
+            const originalFillStyle = ctx.fillStyle;
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+            ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+            ctx.fillStyle = originalFillStyle;
+        }
+        
+        // 检查是否收集到奶酪
+        function checkCheeseCollection(character) {
+            const gridX = Math.floor(character.x / TILE_SIZE);
+            const gridY = Math.floor(character.y / TILE_SIZE);
+            
+            // 检查角色位置是否有奶酪
+            if (gameMap[gridY][gridX] === 4) {
+                gameMap[gridY][gridX] = 0; // 移除奶酪
+                cheeseCollected++;
+                
+                // 播放收集奶酪的动画
+                drawCheeseCollectionEffect(character.x, character.y);
+                
+                // 更新HUD
+                updateHUD();
+                
+                // 检查是否收集完所有奶酪
+                if (cheeseCollected >= totalCheese) {
+                    completeLevel();
+                }
+            }
+        }
+        
+        // 绘制收集奶酪的效果
+        function drawCheeseCollectionEffect(x, y) {
+            // 简单的动画效果
+            const originalFillStyle = ctx.fillStyle;
+            ctx.fillStyle = 'rgba(255, 215, 0, 0.6)';
+            ctx.beginPath();
+            ctx.arc(x + TILE_SIZE/4, y + TILE_SIZE/4, TILE_SIZE/2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = originalFillStyle;
+        }
+        
+        // 处理关卡完成
+        function completeLevel() {
+            clearInterval(timerInterval);
+            currentLevel++;
+            
+            if (currentLevel <= 5) { // 最多5关
+                // 准备下一关
+                generateMap(currentLevel);
+                cheeseCollected = 0;
+                timeLeft = 45 + (currentLevel - 1) * 3; // 增加时间，但增幅减小
+                updateHUD();
+                
+                // 重置角色位置
+                cat.x = TILE_SIZE * 2;
+                cat.y = TILE_SIZE * 2;
+                mouse.x = TILE_SIZE * 12;
+                mouse.y = TILE_SIZE * 8;
+                
+                // 显示关卡完成信息
+                showLevelCompleteMessage();
+                
+                // 延迟开始下一关
+                setTimeout(() => {
+                    // 继续游戏
+                    timerInterval = setInterval(() => {
+                        if (gameState === 'playing') {
+                            timeLeft--;
+                            updateHUD();
+                            
+                            if (timeLeft <= 0) {
+                                endGame(false);
+                            }
+                        }
+                    }, 1000);
+                }, 2000);
+            } else {
+                // 通关所有关卡
+                endGame(true, true);
+            }
+        }
+        
+        // 显示关卡完成信息
+        function showLevelCompleteMessage() {
+            const originalFillStyle = ctx.fillStyle;
+            const originalFont = ctx.font;
+            
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+            ctx.fillRect(0, canvasHeight/2 - 40, canvasWidth, 80);
+            
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 24px "Comic Sans MS", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(`关卡 ${currentLevel - 1} 完成！`, canvasWidth/2, canvasHeight/2);
+            
+            ctx.font = '16px "Comic Sans MS", sans-serif';
+            ctx.fillText('准备下一关...', canvasWidth/2, canvasHeight/2 + 25);
+            
+            // 恢复上下文状态
+            ctx.fillStyle = originalFillStyle;
+            ctx.font = originalFont;
+            ctx.textAlign = 'start';
+        }
+        
+        // 游戏结束
+        function endGame(isVictory, isCompleteAll = false) {
+            gameState = 'ended';
+            clearInterval(timerInterval);
+            
+            const endScreen = document.getElementById('endScreen');
+            const endTitle = document.getElementById('endTitle');
+            const endMessage = document.getElementById('endMessage');
+            const endImage = document.getElementById('endImage');
+            
+            if (isCompleteAll) {
+                endTitle.textContent = '恭喜通关！';
+                endMessage.textContent = '你成功通过了所有关卡，真是太棒了！';
+                endImage.src = 'https://picsum.photos/seed/win/200/200';
+                endImage.alt = '庆祝胜利的图片';
+            } else if (isVictory) {
+                endTitle.textContent = '胜利！';
+                endMessage.textContent = `你在第 ${currentLevel} 关收集了所有奶酪！用时 ${45 + (currentLevel - 1) * 3 - timeLeft} 秒`;
+                endImage.src = 'https://picsum.photos/seed/cheese/200/200';
+                endImage.alt = '一堆奶酪的图片';
+            } else {
+                endTitle.textContent = '时间到！';
+                endMessage.textContent = `你在第 ${currentLevel} 关收集了 ${cheeseCollected}/${totalCheese} 个奶酪`;
+                endImage.src = 'https://picsum.photos/seed/timeup/200/200';
+                endImage.alt = '时间结束的图片';
+            }
+            
+            endScreen.classList.remove('hidden');
+        }
+        
+        // 绘制游戏
+        function draw() {
+            // 清空画布
+            ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+            
+            // 绘制地图
+            drawMap();
+            
+            // 绘制角色
+            drawCharacter(cat);
+            drawCharacter(mouse);
+            
+            // 如果游戏暂停，显示暂停信息
+            if (gameState === 'paused') {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+                ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+                
+                ctx.fillStyle = 'white';
+                ctx.font = 'bold 30px "Comic Sans MS", sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('游戏暂停', canvasWidth/2, canvasHeight/2);
+            }
+        }
+        
+        // 绘制地图
+        function drawMap() {
+            for (let y = 0; y < gameMap.length; y++) {
+                for (let x = 0; x < gameMap[y].length; x++) {
+                    const tileType = gameMap[y][x];
+                    const tileX = x * TILE_SIZE;
+                    const tileY = y * TILE_SIZE;
+                    
+                    switch(tileType) {
+                        case 1: // 普通墙壁
+                            ctx.fillStyle = '#8B4513';
+                            ctx.fillRect(tileX, tileY, TILE_SIZE, TILE_SIZE);
+                            // 墙壁纹理
+                            ctx.fillStyle = '#A0522D';
+                            ctx.fillRect(tileX + 2, tileY + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+                            break;
+                        case 2: // 可破坏墙壁
+                            ctx.fillStyle = '#CD853F';
+                            ctx.fillRect(tileX, tileY, TILE_SIZE, TILE_SIZE);
+                            // 可破坏墙壁标记
+                            ctx.fillStyle = '#DAA520';
+                            ctx.fillRect(tileX + 8, tileY + 8, TILE_SIZE - 16, TILE_SIZE - 16);
+                            break;
+                        case 3: // 狭小通道
+                            ctx.fillStyle = '#8FBC8F';
+                            ctx.fillRect(tileX, tileY, TILE_SIZE, TILE_SIZE);
+                            // 通道标记
+                            ctx.strokeStyle = '#556B2F';
+                            ctx.setLineDash([5, 3]);
+                            ctx.strokeRect(tileX + 5, tileY + 5, TILE_SIZE - 10, TILE_SIZE - 10);
+                            ctx.setLineDash([]);
+                            break;
+                        case 4: // 奶酪
+                            drawCheese(tileX, tileY);
+                            break;
+                    }
+                }
+            }
+        }
+        
+        // 绘制奶酪
+        function drawCheese(x, y) {
+            ctx.fillStyle = '#FFD700';
+            ctx.beginPath();
+            ctx.moveTo(x + TILE_SIZE/2, y + 5);
+            ctx.lineTo(x + TILE_SIZE - 5, y + TILE_SIZE - 5);
+            ctx.lineTo(x + 5, y + TILE_SIZE - 5);
+            ctx.closePath();
+            ctx.fill();
+            
+            // 奶酪上的洞
+            ctx.fillStyle = '#8B4513';
+            const holeSize = 4;
+            ctx.beginPath();
+            ctx.arc(x + TILE_SIZE/2, y + TILE_SIZE/2, holeSize, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        
+        // 绘制角色
+        function drawCharacter(character) {
+            ctx.fillStyle = character.color;
+            
+            // 根据方向和动画帧绘制不同的角色形态
+            const frame = Math.floor(character.frame) % 4; // 4个动画帧
+            
+            if (character.direction === 'right') {
+                ctx.fillRect(character.x + frame, character.y, character.width - frame, character.height);
+                // 耳朵
+                ctx.fillRect(character.x + character.width - 5, character.y - 5, 5, 10);
+            } else if (character.direction === 'left') {
+                ctx.fillRect(character.x, character.y, character.width - frame, character.height);
+                // 耳朵
+                ctx.fillRect(character.x, character.y - 5, 5, 10);
+            } else if (character.direction === 'up') {
+                ctx.fillRect(character.x, character.y + frame, character.width, character.height - frame);
+                // 耳朵
+                ctx.fillRect(character.x - 5, character.y, 10, 5);
+            } else if (character.direction === 'down') {
+                ctx.fillRect(character.x, character.y, character.width, character.height - frame);
+                // 耳朵
+                ctx.fillRect(character.x - 5, character.y + character.height - 5, 10, 5);
+            }
+            
+            // 眼睛
+            ctx.fillStyle = 'white';
+            if (character.direction === 'right') {
+                ctx.fillRect(character.x + character.width - 10, character.y + 5, 5, 5);
+            } else if (character.direction === 'left') {
+                ctx.fillRect(character.x + 5, character.y + 5, 5, 5);
+            } else if (character.direction === 'up') {
+                ctx.fillRect(character.x + 5, character.y + 5, 5, 5);
+            } else if (character.direction === 'down') {
+                ctx.fillRect(character.x + character.width - 10, character.y + character.height - 10, 5, 5);
+            }
+            
+            // 瞳孔
+            ctx.fillStyle = 'black';
+            if (character.direction === 'right') {
+                ctx.fillRect(character.x + character.width - 8, character.y + 7, 2, 2);
+            } else if (character.direction === 'left') {
+                ctx.fillRect(character.x + 7, character.y + 7, 2, 2);
+            } else if (character.direction === 'up') {
+                ctx.fillRect(character.x + 7, character.y + 7, 2, 2);
+            } else if (character.direction === 'down') {
+                ctx.fillRect(character.x + character.width - 8, character.y + character.height - 8, 2, 2);
+            }
+        }
+        
+        // 游戏主循环
+        function gameLoop() {
+            if (gameState === 'playing') {
+                moveCharacter();
+            }
+            
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // 当页面加载完成后初始化游戏
+        window.addEventListener('load', initGame);
+    </script>
+</body>
+</html>
