@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FireChat - 实时聊天应用</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+  <!-- 引入Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+  
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#1877f2',
+            secondary: '#42b72a',
+            neutral: {
+              100: '#f0f2f5',
+              200: '#e5ddd5',
+              300: '#dddfe2',
+              400: '#606770',
+              500: '#1c1e21'
+            },
+            message: {
+              sent: '#dcf8c6',
+              received: '#ffffff'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  
+  <style type="text/tailwindcss">
+    @layer utilities {
+      .content-auto {
+        content-visibility: auto;
+      }
+      .message-shadow {
+        box-shadow: 0 1px 0.5px rgba(0, 0, 0, 0.13);
+      }
+      .chat-bg {
+        background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png');
+        background-repeat: repeat;
+      }
+    }
+  </style>
+</head>
+<body class="bg-neutral-100 text-neutral-500 min-h-screen">
+  <div class="max-w-3xl mx-auto p-4 md:p-6">
+    <!-- Firebase配置 -->
+    <script>
+      // 替换为你的Firebase配置
+      const firebaseConfig = {
+        apiKey: "YOUR_API_KEY",
+        authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+        databaseURL: "https://YOUR_PROJECT_ID.firebaseio.com",
+        projectId: "YOUR_PROJECT_ID",
+        storageBucket: "YOUR_PROJECT_ID.appspot.com",
+        messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+        appId: "YOUR_APP_ID"
+      };
+
+      // 初始化Firebase
+      firebase.initializeApp(firebaseConfig);
+      const db = firebase.database();
+      const auth = firebase.auth();
+    </script>
+
+    <!-- 登录/注册界面 -->
+    <div id="auth-container" class="bg-white rounded-xl shadow-lg p-6 md:p-8 mt-8 md:mt-12">
+      <div class="text-center mb-6">
+        <h1 class="text-[clamp(2rem,5vw,2.5rem)] font-bold text-primary mb-2">FireChat</h1>
+        <p class="text-neutral-400">简单、快捷的实时聊天应用</p>
+      </div>
+      
+      <!-- 注册表单 -->
+      <div class="mb-6">
+        <div class="mb-4">
+          <input type="text" id="register-name" 
+                 class="w-full px-4 py-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary transition duration-200" 
+                 placeholder="姓名">
+        </div>
+        <div class="mb-4">
+          <input type="email" id="register-email" 
+                 class="w-full px-4 py-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary transition duration-200" 
+                 placeholder="邮箱">
+        </div>
+        <div class="mb-4">
+          <input type="password" id="register-password" 
+                 class="w-full px-4 py-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary transition duration-200" 
+                 placeholder="密码">
+        </div>
+        <button id="register-btn" 
+                class="w-full bg-primary hover:bg-primary/90 text-white font-semibold py-3 px-4 rounded-lg transition duration-200">
+          注册
+        </button>
+      </div>
+      
+      <div class="relative my-6">
+        <div class="absolute inset-0 flex items-center">
+          <div class="w-full border-t border-neutral-300"></div>
+        </div>
+        <div class="relative flex justify-center text-sm">
+          <span class="px-2 bg-white text-neutral-400">或使用已有账号登录</span>
+        </div>
+      </div>
+      
+      <!-- 登录表单 -->
+      <div>
+        <div class="mb-4">
+          <input type="email" id="login-email" 
+                 class="w-full px-4 py-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary transition duration-200" 
+                 placeholder="邮箱">
+        </div>
+        <div class="mb-4">
+          <input type="password" id="login-password" 
+                 class="w-full px-4 py-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary transition duration-200" 
+                 placeholder="密码">
+        </div>
+        <button id="login-btn" 
+                class="w-full bg-secondary hover:bg-secondary/90 text-white font-semibold py-3 px-4 rounded-lg transition duration-200">
+          登录
+        </button>
+      </div>
+    </div>
+    
+    <!-- 聊天界面 -->
+    <div id="chat-container" class="hidden flex flex-col h-[80vh] bg-white rounded-xl shadow-lg overflow-hidden mt-8 md:mt-12">
+      <!-- 聊天头部 -->
+      <div class="bg-primary text-white p-4 flex justify-between items-center">
+        <div class="flex items-center">
+          <div id="user-avatar" class="w-10 h-10 rounded-full bg-white text-primary flex items-center justify-center font-bold mr-3">U</div>
+          <div id="user-name" class="font-medium">用户</div>
+        </div>
+        <button id="logout-btn" class="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg transition duration-200">
+          退出登录
+        </button>
+      </div>
+      
+      <!-- 消息区域 -->
+      <div id="messages" class="flex-1 overflow-y-auto p-4 chat-bg bg-neutral-200"></div>
+      
+      <!-- 输入区域 -->
+      <div class="p-3 bg-neutral-100 border-t border-neutral-300">
+        <div class="flex items-center">
+          <input type="text" id="message-input" 
+                 class="flex-1 px-4 py-3 border border-neutral-300 rounded-full focus:ring-2 focus:ring-primary focus:border-primary transition duration-200 outline-none" 
+                 placeholder="输入消息...">
+          <button id="send-btn" class="ml-2 w-10 h-10 rounded-full bg-primary text-white flex items-center justify-center hover:bg-primary/90 transition duration-200">
+            <i class="fa fa-paper-plane"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 身份验证相关函数
+    function showAuthUI() {
+      document.getElementById('auth-container').style.display = 'block';
+      document.getElementById('chat-container').style.display = 'none';
+    }
+
+    function showChatUI(user) {
+      document.getElementById('auth-container').style.display = 'none';
+      document.getElementById('chat-container').style.display = 'flex';
+      
+      // 更新用户信息显示
+      const userName = document.getElementById('user-name');
+      const userAvatar = document.getElementById('user-avatar');
+      
+      userName.textContent = user.displayName || '匿名用户';
+      userAvatar.textContent = user.displayName ? user.displayName.charAt(0).toUpperCase() : 'A';
+    }
+
+    function register() {
+      const name = document.getElementById('register-name').value.trim();
+      const email = document.getElementById('register-email').value.trim();
+      const password = document.getElementById('register-password').value.trim();
+      
+      if (!name || !email || !password) {
+        alert('请填写所有字段');
+        return;
+      }
+      
+      auth.createUserWithEmailAndPassword(email, password)
+        .then((userCredential) => {
+          // 注册成功后更新用户信息
+          const user = userCredential.user;
+          return user.updateProfile({
+            displayName: name
+          });
+        })
+        .then(() => {
+          alert('注册成功！');
+          // 清空表单
+          document.getElementById('register-name').value = '';
+          document.getElementById('register-email').value = '';
+          document.getElementById('register-password').value = '';
+        })
+        .catch((error) => {
+          alert('注册失败: ' + error.message);
+          console.error(error);
+        });
+    }
+
+    function login() {
+      const email = document.getElementById('login-email').value.trim();
+      const password = document.getElementById('login-password').value.trim();
+      
+      if (!email || !password) {
+        alert('请填写所有字段');
+        return;
+      }
+      
+      auth.signInWithEmailAndPassword(email, password)
+        .then(() => {
+          console.log('登录成功');
+          // 清空表单
+          document.getElementById('login-email').value = '';
+          document.getElementById('login-password').value = '';
+        })
+        .catch((error) => {
+          alert('登录失败: ' + error.message);
+          console.error(error);
+        });
+    }
+
+    function logout() {
+      if (confirm('确定要退出登录吗？')) {
+        auth.signOut()
+          .then(() => {
+            alert('已退出登录');
+          })
+          .catch((error) => {
+            console.error('登出失败: ', error);
+          });
+      }
+    }
+
+    // 聊天功能相关函数
+    function sendMessage() {
+      const input = document.getElementById('message-input');
+      const text = input.value.trim();
+      
+      if (text && auth.currentUser) {
+        const user = auth.currentUser;
+        const messagesRef = db.ref('messages');
+        
+        // 发送消息到Firebase数据库
+        messagesRef.push({
+          text: text,
+          userId: user.uid,
+          userName: user.displayName || '匿名用户',
+          timestamp: firebase.database.ServerValue.TIMESTAMP
+        });
+        
+        // 清空输入框
+        input.value = '';
+      }
+    }
+
+    function loadMessages() {
+      const messagesRef = db.ref('messages').orderByChild('timestamp');
+      const messagesContainer = document.getElementById('messages');
+      
+      // 清除现有消息
+      messagesContainer.innerHTML = '';
+      
+      // 监听新消息
+      messagesRef.on('child_added', (snapshot) => {
+        const message = snapshot.val();
+        const user = auth.currentUser;
+        const isCurrentUser = user && message.userId === user.uid;
+        
+        // 创建消息元素
+        const messageElement = document.createElement('div');
+        messageElement.className = `mb-4 max-w-[70%] ${isCurrentUser ? 'ml-auto' : 'mr-auto'}`;
+        
+        // 格式化时间
+        const date = new Date(message.timestamp);
+        const timeString = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+        
+        messageElement.innerHTML = `
+          <div class="message-shadow rounded-2xl px-4 py-2 ${isCurrentUser ? 'bg-message-sent' : 'bg-message-received'}">
+            ${message.text}
+          </div>
+          <div class="text-xs text-neutral-400 mt-1 ${isCurrentUser ? 'text-right' : 'text-left'} px-2">
+            ${message.userName} · ${timeString}
+          </div>
+        `;
+        
+        messagesContainer.appendChild(messageElement);
+        // 滚动到底部
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      });
+    }
+
+    // 事件监听
+    document.addEventListener('DOMContentLoaded', () => {
+      // 身份验证按钮
+      document.getElementById('register-btn').addEventListener('click', register);
+      document.getElementById('login-btn').addEventListener('click', login);
+      document.getElementById('logout-btn').addEventListener('click', logout);
+      
+      // 聊天按钮
+      document.getElementById('send-btn').addEventListener('click', sendMessage);
+      document.getElementById('message-input').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+          sendMessage();
+        }
+      });
+      
+      // 监听身份验证状态变化
+      auth.onAuthStateChanged((user) => {
+        if (user) {
+          // 用户已登录
+          showChatUI(user);
+          loadMessages();
+        } else {
+          // 用户未登录
+          showAuthUI();
+        }
+      });
+    });
+  </script>
+</body>
+</html>
