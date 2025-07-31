@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>气球射手 - 加速版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#4F46E5',
+                        secondary: '#10B981',
+                        accent: '#F59E0B',
+                        danger: '#EF4444'
+                    },
+                    fontFamily: {
+                        game: ['"Comic Sans MS"', '"Marker Felt"', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .balloon {
+                position: absolute;
+                border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+                transform-origin: center bottom;
+                cursor: pointer;
+                z-index: 20;
+            }
+            .balloon-string {
+                position: absolute;
+                width: 1px;
+                background-color: #333;
+                z-index: 15;
+            }
+            .pop-effect {
+                position: absolute;
+                border-radius: 50%;
+                z-index: 25;
+                pointer-events: none;
+                animation: pop 0.5s forwards;
+            }
+            .score-popup {
+                position: absolute;
+                color: white;
+                font-weight: bold;
+                pointer-events: none;
+                z-index: 30;
+                animation: float-up 1s forwards;
+            }
+            .cannon {
+                position: absolute;
+                bottom: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                z-index: 10;
+            }
+            .cannon-barrel {
+                width: 80px;
+                height: 20px;
+                background-color: #6B7280;
+                border-radius: 5px 15px 15px 5px;
+                position: relative;
+            }
+            .cannon-base {
+                width: 40px;
+                height: 40px;
+                background-color: #4B5563;
+                border-radius: 50%;
+                position: absolute;
+                left: -10px;
+                top: 50%;
+                transform: translateY(-50%);
+            }
+            .target-indicator {
+                position: absolute;
+                width: 30px;
+                height: 30px;
+                border: 2px dashed white;
+                border-radius: 50%;
+                pointer-events: none;
+                z-index: 5;
+                animation: pulse 1.5s infinite;
+            }
+            .speed-indicator {
+                position: absolute;
+                bottom: 100px;
+                left: 50%;
+                transform: translateX(-50%);
+                background-color: rgba(0,0,0,0.3);
+                color: white;
+                padding: 2px 10px;
+                border-radius: 10px;
+                font-size: 0.8rem;
+                z-index: 10;
+                opacity: 0;
+                transition: opacity 0.3s;
+            }
+        }
+        
+        @keyframes pop {
+            0% { transform: scale(0); opacity: 1; }
+            50% { transform: scale(1.5); opacity: 0.8; }
+            100% { transform: scale(2); opacity: 0; }
+        }
+        
+        @keyframes float-up {
+            0% { transform: translateY(0); opacity: 1; }
+            100% { transform: translateY(-50px); opacity: 0; }
+        }
+        
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: 0.5; }
+            50% { transform: scale(1.2); opacity: 1; }
+            100% { transform: scale(1); opacity: 0.5; }
+        }
+        
+        @keyframes float {
+            0% { transform: translateY(0) rotate(0deg); }
+            50% { transform: translateY(-10px) rotate(2deg); }
+            100% { transform: translateY(0) rotate(0deg); }
+        }
+        
+        @keyframes fadeInOut {
+            0% { opacity: 0; }
+            20% { opacity: 1; }
+            80% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+    </style>
+</head>
+<body class="font-game overflow-hidden h-screen bg-gradient-to-b from-blue-100 to-blue-300 touch-manipulation">
+    <!-- 游戏容器 -->
+    <div id="game-container" class="relative w-full h-screen overflow-hidden">
+        <!-- 背景装饰 -->
+        <div class="absolute inset-0 overflow-hidden">
+            <!-- 云朵 -->
+            <div class="absolute top-[10%] left-[5%] w-24 h-12 bg-white rounded-full opacity-70 animate-pulse" style="animation-duration: 8s;"></div>
+            <div class="absolute top-[15%] left-[8%] w-32 h-14 bg-white rounded-full opacity-70 animate-pulse" style="animation-duration: 7s;"></div>
+            <div class="absolute top-[30%] right-[10%] w-40 h-16 bg-white rounded-full opacity-70 animate-pulse" style="animation-duration: 10s;"></div>
+            <div class="absolute top-[25%] right-[12%] w-28 h-14 bg-white rounded-full opacity-70 animate-pulse" style="animation-duration: 9s;"></div>
+            <div class="absolute top-[60%] left-[20%] w-36 h-14 bg-white rounded-full opacity-70 animate-pulse" style="animation-duration: 11s;"></div>
+        </div>
+        
+        <!-- 游戏区域 -->
+        <div id="game-area" class="relative w-full h-full z-5">
+            <!-- 气球会在这里动态生成 -->
+        </div>
+        
+        <!-- 炮台 -->
+        <div class="cannon">
+            <div class="cannon-barrel" id="cannon-barrel">
+                <div class="cannon-base"></div>
+            </div>
+        </div>
+        
+        <!-- 瞄准指示器 -->
+        <div id="target-indicator" class="target-indicator hidden"></div>
+        
+        <!-- 速度提示 -->
+        <div id="speed-indicator" class="speed-indicator">速度提升!</div>
+        
+        <!-- UI元素 -->
+        <div class="absolute top-4 left-4 bg-black/30 backdrop-blur-sm text-white px-4 py-2 rounded-full flex items-center z-10">
+            <i class="fa fa-star text-yellow-300 mr-2"></i>
+            <span id="score-display" class="font-bold text-xl">0</span>
+        </div>
+        
+        <div class="absolute top-4 right-4 bg-black/30 backdrop-blur-sm text-white px-4 py-2 rounded-full flex items-center z-10">
+            <i class="fa fa-clock-o mr-2"></i>
+            <span id="time-display" class="font-bold text-xl">30</span>
+        </div>
+        
+        <!-- 开始界面 -->
+        <div id="start-screen" class="absolute inset-0 bg-black/50 backdrop-blur-sm z-20 flex flex-col items-center justify-center p-6">
+            <h1 class="text-[clamp(2rem,10vw,4rem)] font-bold text-white text-center mb-6">
+                气球射手
+            </h1>
+            
+            <div class="flex justify-center mb-8">
+                <div class="w-16 h-24 rounded-full bg-red-500 mx-1 animate-bounce" style="animation-delay: 0.1s;"></div>
+                <div class="w-16 h-24 rounded-full bg-blue-500 mx-1 animate-bounce" style="animation-delay: 0.2s;"></div>
+                <div class="w-16 h-24 rounded-full bg-green-500 mx-1 animate-bounce" style="animation-delay: 0.3s;"></div>
+            </div>
+            
+            <p class="text-white text-center mb-2 text-lg">点击或滑动屏幕射击气球</p>
+            <p class="text-white text-center mb-8 text-lg">时间越久，速度越快！</p>
+            
+            <button id="start-btn" class="bg-primary hover:bg-primary/90 text-white font-bold py-4 px-12 rounded-full text-xl transform transition-all active:scale-95 shadow-lg">
+                开始游戏
+            </button>
+        </div>
+        
+        <!-- 游戏结束界面 -->
+        <div id="game-over" class="hidden absolute inset-0 bg-black/50 backdrop-blur-sm z-20 flex flex-col items-center justify-center p-6">
+            <h2 class="text-[clamp(1.8rem,8vw,3rem)] font-bold text-white text-center mb-4">游戏结束</h2>
+            <p class="text-white text-xl mb-2">你的得分: <span id="final-score" class="text-yellow-300 font-bold">0</span></p>
+            <p class="text-white text-xl mb-8">最高分: <span id="high-score" class="text-yellow-300 font-bold">0</span></p>
+            <button id="restart-btn" class="bg-primary hover:bg-primary/90 text-white font-bold py-4 px-12 rounded-full text-xl transform transition-all active:scale-95 shadow-lg">
+                再来一次
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // 游戏状态 - 增加了速度相关参数
+        const gameState = {
+            isPlaying: false,
+            score: 0,
+            highScore: 0,
+            timeLeft: 30,
+            balloons: [],
+            baseSpawnRate: 1500, // 初始气球生成间隔(ms)
+            currentSpawnRate: 1500,
+            baseSpeed: 0.5, // 初始气球速度
+            currentSpeed: 0.5,
+            speedMultiplier: 1, // 速度倍数
+            lastSpawn: 0,
+            lastSpeedIncrease: 0,
+            speedIncreaseInterval: 5000, // 每5秒增加一次速度
+            animationFrameId: null,
+            timeInterval: null,
+            isTouching: false
+        };
+        
+        // DOM元素
+        const gameContainer = document.getElementById('game-container');
+        const gameArea = document.getElementById('game-area');
+        const startScreen = document.getElementById('start-screen');
+        const startBtn = document.getElementById('start-btn');
+        const gameOverScreen = document.getElementById('game-over');
+        const restartBtn = document.getElementById('restart-btn');
+        const scoreDisplay = document.getElementById('score-display');
+        const timeDisplay = document.getElementById('time-display');
+        const finalScoreDisplay = document.getElementById('final-score');
+        const highScoreDisplay = document.getElementById('high-score');
+        const cannonBarrel = document.getElementById('cannon-barrel');
+        const targetIndicator = document.getElementById('target-indicator');
+        const speedIndicator = document.getElementById('speed-indicator');
+        
+        // 气球颜色和分值
+        const balloonTypes = [
+            { color: '#EF4444', score: 1 },   // 红色
+            { color: '#3B82F6', score: 1 },   // 蓝色
+            { color: '#10B981', score: 1 },   // 绿色
+            { color: '#F59E0B', score: 2 },   // 黄色（高分）
+            { color: '#8B5CF6', score: 3 }    // 紫色（最高分）
+        ];
+        
+        // 初始化游戏
+        function initGame() {
+            // 获取最高分
+            const savedHighScore = localStorage.getItem('balloonShooterHighScore');
+            gameState.highScore = savedHighScore ? parseInt(savedHighScore) : 0;
+            highScoreDisplay.textContent = gameState.highScore;
+            
+            // 设置事件监听
+            setupEventListeners();
+        }
+        
+        // 设置事件监听
+        function setupEventListeners() {
+            // 开始按钮
+            startBtn.addEventListener('click', startGame);
+            startBtn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                startBtn.classList.add('scale-95');
+            });
+            startBtn.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                startBtn.classList.remove('scale-95');
+                startGame();
+            });
+            
+            // 重启按钮
+            restartBtn.addEventListener('click', startGame);
+            restartBtn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                restartBtn.classList.add('scale-95');
+            });
+            restartBtn.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                restartBtn.classList.remove('scale-95');
+                startGame();
+            });
+            
+            // 游戏区域触摸/点击事件
+            gameArea.addEventListener('touchstart', handleTouchStart, { passive: false });
+            gameArea.addEventListener('touchmove', handleTouchMove, { passive: false });
+            gameArea.addEventListener('touchend', handleTouchEnd, { passive: false });
+            gameArea.addEventListener('mousedown', handleMouseDown);
+            gameArea.addEventListener('mousemove', handleMouseMove);
+            gameArea.addEventListener('mouseup', handleMouseUp);
+        }
+        
+        // 开始游戏
+        function startGame() {
+            // 重置游戏状态
+            gameState.isPlaying = true;
+            gameState.score = 0;
+            gameState.timeLeft = 30;
+            gameState.balloons = [];
+            gameState.lastSpawn = 0;
+            gameState.lastSpeedIncrease = 0;
+            gameState.speedMultiplier = 1;
+            gameState.currentSpeed = gameState.baseSpeed;
+            gameState.currentSpawnRate = gameState.baseSpawnRate;
+            
+            // 更新显示
+            scoreDisplay.textContent = '0';
+            timeDisplay.textContent = '30';
+            
+            // 清空游戏区域
+            clearGameArea();
+            
+            // 隐藏菜单，显示游戏
+            startScreen.classList.add('hidden');
+            gameOverScreen.classList.add('hidden');
+            
+            // 开始计时
+            if (gameState.timeInterval) clearInterval(gameState.timeInterval);
+            gameState.timeInterval = setInterval(updateTimer, 1000);
+            
+            // 开始游戏循环
+            gameState.animationFrameId = requestAnimationFrame(gameLoop);
+        }
+        
+        // 游戏循环 - 增加了速度提升逻辑
+        function gameLoop(timestamp) {
+            if (!gameState.isPlaying) return;
+            
+            // 定期增加速度和生成频率
+            if (timestamp - gameState.lastSpeedIncrease > gameState.speedIncreaseInterval) {
+                increaseSpeed();
+                gameState.lastSpeedIncrease = timestamp;
+            }
+            
+            // 生成气球
+            if (timestamp - gameState.lastSpawn > gameState.currentSpawnRate) {
+                spawnBalloon();
+                gameState.lastSpawn = timestamp;
+            }
+            
+            // 更新气球位置
+            updateBalloons();
+            
+            // 继续游戏循环
+            gameState.animationFrameId = requestAnimationFrame(gameLoop);
+        }
+        
+        // 增加游戏速度和难度
+        function increaseSpeed() {
+            // 提高速度（每次增加15%）
+            gameState.speedMultiplier += 0.15;
+            gameState.currentSpeed = gameState.baseSpeed * gameState.speedMultiplier;
+            
+            // 加快生成频率（每次减少10%）
+            gameState.currentSpawnRate = Math.max(500, gameState.baseSpawnRate / gameState.speedMultiplier);
+            
+            // 显示速度提升提示
+            showSpeedIndicator();
+            
+            // 播放速度提升音效
+            playSound('speedup');
+        }
+        
+        // 显示速度提升提示
+        function showSpeedIndicator() {
+            speedIndicator.style.opacity = '1';
+            speedIndicator.style.animation = 'fadeInOut 1.5s forwards';
+            
+            setTimeout(() => {
+                speedIndicator.style.opacity = '0';
+                speedIndicator.style.animation = '';
+            }, 1500);
+        }
+        
+        // 生成气球 - 使用当前速度
+        function spawnBalloon() {
+            const containerRect = gameContainer.getBoundingClientRect();
+            const balloonType = balloonTypes[Math.floor(Math.random() * balloonTypes.length)];
+            
+            // 随机大小
+            const size = Math.random() * 20 + 40;
+            
+            // 随机水平位置
+            const x = Math.random() * (containerRect.width - size) + (size / 2);
+            
+            // 创建气球
+            const balloon = document.createElement('div');
+            balloon.className = 'balloon';
+            balloon.style.width = `${size}px`;
+            balloon.style.height = `${size * 1.2}px`;
+            balloon.style.left = `${x}px`;
+            balloon.style.bottom = `-${size * 1.2}px`; // 从屏幕底部外开始
+            balloon.style.backgroundColor = balloonType.color;
+            balloon.style.animation = `float ${Math.random() * 2 + 3}s ease-in-out infinite`;
+            
+            // 创建气球绳
+            const string = document.createElement('div');
+            string.className = 'balloon-string';
+            string.style.height = `${size * 0.8}px`;
+            string.style.left = `${x + size/2}px`;
+            string.style.bottom = `0px`;
+            
+            // 气球数据 - 使用当前速度
+            const balloonData = {
+                element: balloon,
+                string: string,
+                x: x,
+                y: -size * 1.2,
+                size: size,
+                // 基于当前速度的随机速度
+                speed: gameState.currentSpeed + (Math.random() * 0.3),
+                color: balloonType.color,
+                score: balloonType.score,
+                popped: false
+            };
+            
+            // 添加到游戏区域和状态
+            gameArea.appendChild(balloon);
+            gameArea.appendChild(string);
+            gameState.balloons.push(balloonData);
+            
+            // 添加点击事件
+            balloon.addEventListener('click', () => {
+                popBalloon(balloonData);
+            });
+            balloon.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                popBalloon(balloonData);
+            });
+        }
+        
+        // 更新气球位置
+        function updateBalloons() {
+            const containerHeight = gameContainer.getBoundingClientRect().height;
+            
+            gameState.balloons.forEach((balloon, index) => {
+                if (balloon.popped) return;
+                
+                // 上升 - 速度已随时间增加
+                balloon.y += balloon.speed;
+                balloon.element.style.bottom = `${balloon.y}px`;
+                balloon.string.style.bottom = `${balloon.y - balloon.size * 1.2}px`;
+                
+                // 超出屏幕顶部
+                if (balloon.y > containerHeight) {
+                    removeBalloon(balloon, index);
+                }
+            });
+        }
+        
+        // 点击/触摸气球
+        function popBalloon(balloon) {
+            if (balloon.popped || !gameState.isPlaying) return;
+            
+            balloon.popped = true;
+            
+            // 创建爆炸效果
+            const popEffect = document.createElement('div');
+            popEffect.className = 'pop-effect';
+            popEffect.style.width = `${balloon.size * 1.5}px`;
+            popEffect.style.height = `${balloon.size * 1.5}px`;
+            popEffect.style.left = `${balloon.x - balloon.size * 0.25}px`;
+            popEffect.style.bottom = `${balloon.y - balloon.size * 0.25}px`;
+            popEffect.style.backgroundColor = balloon.color;
+            popEffect.style.opacity = '0.7';
+            
+            gameArea.appendChild(popEffect);
+            
+            // 显示得分
+            showScorePopup(balloon.x + balloon.size/2, balloon.y + balloon.size/2, balloon.score);
+            
+            // 增加分数
+            gameState.score += balloon.score;
+            scoreDisplay.textContent = gameState.score;
+            
+            // 播放爆炸音效
+            playSound('pop');
+            
+            // 移除气球
+            setTimeout(() => {
+                popEffect.remove();
+                const index = gameState.balloons.indexOf(balloon);
+                if (index !== -1) {
+                    removeBalloon(balloon, index);
+                }
+            }, 500);
+        }
+        
+        // 显示得分弹窗
+        function showScorePopup(x, y, score) {
+            const popup = document.createElement('div');
+            popup.className = 'score-popup';
+            popup.textContent = `+${score}`;
+            popup.style.left = `${x}px`;
+            popup.style.bottom = `${y}px`;
+            
+            gameArea.appendChild(popup);
+            
+            setTimeout(() => {
+                popup.remove();
+            }, 1000);
+        }
+        
+        // 移除气球
+        function removeBalloon(balloon, index) {
+            balloon.element.remove();
+            balloon.string.remove();
+            gameState.balloons.splice(index, 1);
+        }
+        
+        // 清空游戏区域
+        function clearGameArea() {
+            // 移除所有气球
+            gameState.balloons.forEach(balloon => {
+                balloon.element.remove();
+                balloon.string.remove();
+            });
+            gameState.balloons = [];
+            
+            // 移除所有特效
+            document.querySelectorAll('.pop-effect, .score-popup').forEach(el => {
+                el.remove();
+            });
+        }
+        
+        // 更新计时器
+        function updateTimer() {
+            gameState.timeLeft--;
+            timeDisplay.textContent = gameState.timeLeft;
+            
+            // 播放倒计时音效
+            if (gameState.timeLeft <= 5) {
+                playSound('countdown');
+            }
+            
+            // 时间到，游戏结束
+            if (gameState.timeLeft <= 0) {
+                endGame();
+            }
+        }
+        
+        // 结束游戏
+        function endGame() {
+            gameState.isPlaying = false;
+            clearInterval(gameState.timeInterval);
+            cancelAnimationFrame(gameState.animationFrameId);
+            
+            // 更新最高分
+            if (gameState.score > gameState.highScore) {
+                gameState.highScore = gameState.score;
+                localStorage.setItem('balloonShooterHighScore', gameState.highScore);
+                highScoreDisplay.textContent = gameState.highScore;
+            }
+            
+            // 显示最终得分
+            finalScoreDisplay.textContent = gameState.score;
+            
+            // 显示游戏结束界面
+            gameOverScreen.classList.remove('hidden');
+        }
+        
+        // 处理触摸开始
+        function handleTouchStart(e) {
+            if (!gameState.isPlaying) return;
+            
+            e.preventDefault();
+            gameState.isTouching = true;
+            aimCannon(e.touches[0]);
+        }
+        
+        // 处理触摸移动
+        function handleTouchMove(e) {
+            if (!gameState.isPlaying || !gameState.isTouching) return;
+            
+            e.preventDefault();
+            aimCannon(e.touches[0]);
+        }
+        
+        // 处理触摸结束（射击）
+        function handleTouchEnd(e) {
+            if (!gameState.isPlaying || !gameState.isTouching) return;
+            
+            e.preventDefault();
+            gameState.isTouching = false;
+            targetIndicator.classList.add('hidden');
+            shootAtPosition(e.changedTouches[0]);
+        }
+        
+        // 处理鼠标按下
+        function handleMouseDown(e) {
+            if (!gameState.isPlaying) return;
+            
+            gameState.isTouching = true;
+            aimCannon(e);
+        }
+        
+        // 处理鼠标移动
+        function handleMouseMove(e) {
+            if (!gameState.isPlaying || !gameState.isTouching) return;
+            
+            aimCannon(e);
+        }
+        
+        // 处理鼠标抬起（射击）
+        function handleMouseUp(e) {
+            if (!gameState.isPlaying || !gameState.isTouching) return;
+            
+            gameState.isTouching = false;
+            targetIndicator.classList.add('hidden');
+            shootAtPosition(e);
+        }
+        
+        // 瞄准炮台
+        function aimCannon(event) {
+            const containerRect = gameContainer.getBoundingClientRect();
+            const cannonRect = cannonBarrel.getBoundingClientRect();
+            const cannonX = cannonRect.left + cannonRect.width / 4; // 炮台位置
+            const cannonY = cannonRect.bottom;
+            
+            // 获取触摸/点击位置
+            const touchX = event.clientX - containerRect.left;
+            const touchY = containerRect.height - (event.clientY - containerRect.top); // 翻转Y轴
+            
+            // 计算角度
+            const dx = touchX - cannonX + containerRect.left;
+            const dy = cannonY - event.clientY;
+            let angle = Math.atan2(dy, dx) * (180 / Math.PI);
+            
+            // 限制角度范围
+            angle = Math.max(10, Math.min(80, angle));
+            
+            // 旋转炮台
+            cannonBarrel.style.transform = `rotate(${angle - 90}deg)`;
+            
+            // 显示瞄准指示器
+            targetIndicator.style.left = `${touchX - 15}px`;
+            targetIndicator.style.bottom = `${touchY - 15}px`;
+            targetIndicator.classList.remove('hidden');
+        }
+        
+        // 射击指定位置
+        function shootAtPosition(event) {
+            const containerRect = gameContainer.getBoundingClientRect();
+            const shootX = event.clientX - containerRect.left;
+            const shootY = containerRect.height - (event.clientY - containerRect.top); // 翻转Y轴
+            
+            // 播放射击音效
+            playSound('shoot');
+            
+            // 创建子弹轨迹（视觉效果）
+            createBulletTrail(shootX, shootY);
+            
+            // 检测是否击中气球
+            checkBalloonHit(shootX, shootY);
+        }
+        
+        // 创建子弹轨迹
+        function createBulletTrail(targetX, targetY) {
+            const trail = document.createElement('div');
+            trail.style.position = 'absolute';
+            trail.style.backgroundColor = 'rgba(255, 255, 255, 0.6)';
+            trail.style.zIndex = '15';
+            trail.style.pointerEvents = 'none';
+            
+            // 炮台位置
+            const cannonRect = cannonBarrel.getBoundingClientRect();
+            const cannonX = cannonRect.left + cannonRect.width / 4;
+            const cannonY = cannonRect.bottom;
+            const containerRect = gameContainer.getBoundingClientRect();
+            const startX = (cannonX - containerRect.left) + 30;
+            const startY = containerRect.height - (cannonY - containerRect.top);
+            
+            // 计算轨迹长度和角度
+            const length = Math.sqrt(Math.pow(targetX - startX, 2) + Math.pow(targetY - startY, 2));
+            const angle = Math.atan2(targetY - startY, targetX - startX) * (180 / Math.PI);
+            
+            // 设置轨迹样式
+            trail.style.width = `${length}px`;
+            trail.style.height = '4px';
+            trail.style.left = `${startX}px`;
+            trail.style.bottom = `${startY}px`;
+            trail.style.transform = `rotate(${angle}deg)`;
+            trail.style.transformOrigin = '0 50%';
+            trail.style.borderRadius = '2px';
+            
+            gameArea.appendChild(trail);
+            
+            // 轨迹消失动画
+            setTimeout(() => {
+                trail.style.transition = 'opacity 0.2s';
+                trail.style.opacity = '0';
+                
+                setTimeout(() => {
+                    trail.remove();
+                }, 200);
+            }, 100);
+        }
+        
+        // 检测是否击中气球
+        function checkBalloonHit(x, y) {
+            const hitRadius = 50; // 射击判定半径
+            
+            gameState.balloons.forEach(balloon => {
+                if (balloon.popped) return;
+                
+                // 计算气球中心位置
+                const balloonCenterX = balloon.x + balloon.size / 2;
+                const balloonCenterY = balloon.y + balloon.size * 0.6; // 考虑气球形状的中心
+                
+                // 计算距离
+                const distance = Math.sqrt(
+                    Math.pow(x - balloonCenterX, 2) + 
+                    Math.pow(y - balloonCenterY, 2)
+                );
+                
+                // 如果在判定范围内，击中气球
+                if (distance < hitRadius) {
+                    popBalloon(balloon);
+                }
+            });
+        }
+        
+        // 播放音效
+        function playSound(type) {
+            try {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                gainNode.gain.value = 0.1;
+                
+                switch(type) {
+                    case 'pop':
+                        oscillator.type = 'sine';
+                        oscillator.frequency.setValueAtTime(660, audioContext.currentTime);
+                        oscillator.frequency.exponentialRampToValueAtTime(880, audioContext.currentTime + 0.1);
+                        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+                        oscillator.start();
+                        oscillator.stop(audioContext.currentTime + 0.1);
+                        break;
+                    case 'shoot':
+                        oscillator.type = 'square';
+                        oscillator.frequency.setValueAtTime(440, audioContext.currentTime);
+                        oscillator.frequency.exponentialRampToValueAtTime(220, audioContext.currentTime + 0.1);
+                        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+                        oscillator.start();
+                        oscillator.stop(audioContext.currentTime + 0.1);
+                        break;
+                    case 'speedup':
+                        oscillator.type = 'sine';
+                        oscillator.frequency.setValueAtTime(550, audioContext.currentTime);
+                        oscillator.frequency.exponentialRampToValueAtTime(880, audioContext.currentTime + 0.3);
+                        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+                        oscillator.start();
+                        oscillator.stop(audioContext.currentTime + 0.3);
+                        break;
+                    case 'countdown':
+                        oscillator.type = 'sine';
+                        oscillator.frequency.setValueAtTime(660, audioContext.currentTime);
+                        oscillator.frequency.setValueAtTime(660, audioContext.currentTime + 0.2);
+                        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
+                        oscillator.start();
+                        oscillator.stop(audioContext.currentTime + 0.2);
+                        break;
+                }
+            } catch(e) {
+                console.log('音效播放失败:', e);
+            }
+        }
+        
+        // 初始化游戏
+        window.addEventListener('load', initGame);
+    </script>
+</body>
+</html>
+    
